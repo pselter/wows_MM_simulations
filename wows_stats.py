@@ -9,9 +9,13 @@ Created on Thu Jul  9 20:48:41 2020
 import numpy as np
 from matplotlib import pyplot as plt
 import random
+from scipy.optimize import curve_fit
+from scipy.stats import pearsonr
 
 
 
+
+##############################################################################
 ##############################################################################
 
 class wows_model1(object):
@@ -107,11 +111,13 @@ class wows_model1(object):
             
         return self.playerbase2,self.WR_differences
         
-    #####################################
-    # This is the second model WITH RNG 
-    # Meaning more skill increases the likelihood of winning
-    # there is a RNG parameter indicating how strong skill should influence the outcome
+#####################################
+# This is the second model WITH RNG 
+# Meaning more skill increases the likelihood of winning
+# there is a RNG parameter indicating how strong skill should influence the outcome
 
+# mod1_RNG_1 uses a random distribution of 'RNG_skill" added to one team.
+# this added 'skill' can be positive or negative and represents basically good or bad luck
 
 
     def gen_data_mod1_RNG_1(self,n_iter,RNG):
@@ -150,8 +156,8 @@ class wows_model1(object):
 
                 
                 self.random = (np.random.random()*(2*RNG)-RNG)/12
-                # self.WR_differences[m*self.N_battles+k] = self.random
-                self.WR_differences[m*self.N_battles+k] = (self.skill_green+self.random -self.skill_red)
+                self.WR_differences[m*self.N_battles+k] = self.random
+                # self.WR_differences[m*self.N_battles+k] = (self.skill_green+self.random -self.skill_red)
                 
                 if self.skill_green+self.random > self.skill_red:
                     for l in range(0,12,1):
@@ -167,6 +173,12 @@ class wows_model1(object):
                     for l in range(0,24,1):
                         self.playerbase2[self.battle_lineups[k][l],1] += 0.
         return self.playerbase2,self.WR_differences
+
+#################################
+# mod1_RNG_NORMAL uses a normal distribution of 'RNG_skill" added to one team.
+# normal distribution differs from random in that not all values are equally likely and 
+# values are on a bell curve instead
+# this added 'skill' can be positive or negative and represents basically good or bad luck
 
 
     def gen_data_mod1_RNG_NORMAL(self,n_iter,RNG):
@@ -232,6 +244,9 @@ class wows_model1(object):
     # Employs non-uniform number of games per player
     #
     # This is somewhat closer to reality than the simple cases 1    
+    # 
+    # instead of everyone playing the same number of games, players are randomly chosen for games
+    # every players has an equal chance to play a battle
     
        
     # ####################################
@@ -300,8 +315,10 @@ class wows_model1(object):
         return self.playerbase2,self.WR_differences    
     
     
-        # ####################################
-
+    # ####################################
+    # instead of everyone playing the same number of games, players are randomly chosen for games
+    # The chance for a specific player to play a battle is given by another distribution
+    # This is designed to account for differences in players activity i.e. number of battles per time
     #
     # This is the prototypical NO RNG case meaning the outcome of a match
     # is entirely deterministic and based on the average skill of a team
@@ -369,6 +386,15 @@ class wows_model1(object):
     
     
 ##############################################################################
+##############################################################################
+
+# Define some helperfunctions
+#-------------------------
+# define fitfunction
+def line(x,m,b):
+    f=m*x+b
+    return f
+#------------------------
 
 # ############################################################################
 # # VISUALIZATION SECTION
@@ -379,21 +405,43 @@ font = {'family': 'serif',
         'weight': 'normal',
         'size': 12,
         }
+#################
+# Setup of calculations
+#
+# Number of games to be simulated
+# NOTE: For model 1 this is the number of iterations, i.e. every player will have played this many games
+#       For model 2 and 3 this is the total number of games, with most players having played much fewer games
+#       Consequently, a lower number is sufficient for model 1 and calculation times are much longer!
+n_games = 20
+n_players = 24*100
+sigma = 4.5
+RNG=25
 
-n_games = 500000
-my_players = wows_model1(N_players=24*100)
+# Number of players to be simulated
+# Should be a multiple of 24 for ease of use
+# 24*100 should be enough for most applications
+my_players = wows_model1(N_players=n_players)
 
-my_players.define_skill(sigma=10)
+# Define the skill distribution
+# The sigma value is the width of the 'skill' or 'WR' distribution in WOWS
+# a value between 2 and 5 should be adequate
+my_players.define_skill(sigma=sigma)
 
 playernumbers = my_players.playernumbers
 skill = my_players.playerbase[:,0]
 
-playerbase2, WR_diffs2 = my_players.gen_data_mod3_NO_RNG(n_games)
+# Generate the results based on one of the above models:
+# playerbase2, WR_diffs2 = my_players.gen_data_mod1_NO_RNG(n_games)
+playerbase2, WR_diffs2 = my_players.gen_data_mod1_RNG_1(n_games, RNG)
+# playerbase2, WR_diffs2 = my_players.gen_data_mod1_RNG_NORMAL(n_games, 50)
 
 battles = np.arange(0,len(WR_diffs2),1)
 
-# playerbase3 = my_players.gen_data_RNG_NORMAL(5000,RNG=100)
-# playerbase4 = my_players.gen_data_RNG_NORMAL(5000,RNG=1000)
+
+
+
+####################################################################
+# Figures are made below here:
 
 
 fig = plt.figure(figsize=(4,6),dpi=200)
@@ -412,6 +460,7 @@ plt.title('Player skill distribution', fontdict=font)
 ax1.set_ylabel('number of players', fontdict=font)
 plt.tight_layout()
 plt.show()
+fig.savefig('Skill_distribution_'+str(n_games)+'_'+str(n_players)+'_'+str(sigma)+str(RNG)+'.png',dpi=100, format='png',bbox_inches='tight', pad_inches=0.1) 
 plt.close()
 
 
@@ -419,68 +468,54 @@ fig = plt.figure(figsize=(4,6),dpi=200)
 
 ax = plt.subplot2grid((3,1),(1,0),colspan=1, rowspan=2)
 plt.scatter(WR_diffs2,battles,color='black',alpha=0.1,s=5)
-ax.set_ylabel('player index', fontdict=font)
-ax.set_xlabel('player skill level', fontdict=font)
-plt.xlim(-50, 50)
+ax.set_ylabel('game index', fontdict=font)
+ax.set_xlabel('Skill difference', fontdict=font)
+plt.xlim(-10, 10)
 ax1 = plt.subplot2grid((3,1),(0,0),colspan=1, rowspan=1)
 levels = np.arange(-100,100,1)
 n, bins, patches = plt.hist(WR_diffs2,levels, density=False,facecolor='black',alpha=0.75)
-plt.xlim(-50, 50)
+plt.xlim(-10, 10)
 plt.tick_params(axis='x', which='both', labelbottom=False, bottom=True, labelsize=8)
-plt.title('Player skill distribution', fontdict=font)
-ax1.set_ylabel('number of players', fontdict=font)
+plt.title('Skill difference in MM', fontdict=font)
+ax1.set_ylabel('number of games', fontdict=font)
 plt.tight_layout()
 plt.show()
+fig.savefig('Skill_differences_'+str(n_games)+'_'+str(n_players)+'_'+str(sigma)+str(RNG)+'.png',dpi=100, format='png',bbox_inches='tight', pad_inches=0.1) 
 plt.close()
 
 
 # # Skill level vs Winrate
 
+WR_list = np.arange(0,100,1000)
+
+popt1, pcov1 = curve_fit(line,playerbase2[:,0],100*playerbase2[:,1]/n_games,p0=(1,1),maxfev=1500)
+# calculate Pearson's correlation
+corr, _ = pearsonr(playerbase2[:,0], 100*playerbase2[:,1]/n_games)
+
+
 fig = plt.figure(figsize=(6,4),dpi=200)
-plt.scatter(playerbase2[:,0],100*playerbase2[:,1]/playerbase2[:,2],c=playerbase2[:,2],cmap='hsv',alpha=0.2,s=15)
+plt.title('Winrate vs Skill'+'\n  Number of Battles:'+str(n_games)+'\n RNG value:'+str(RNG),fontdict=font,size=14)
+plt.scatter(playerbase2[:,0],100*playerbase2[:,1]/n_games,alpha=0.2,s=15)
+plt.plot(playerbase2[:,0],line(playerbase2[:,0],*popt1),color='k')
+
+cmp1=r'slope = '+str(np.round(popt1[0],2))+' $\pm$'+str(np.round(np.sqrt(pcov1[0,0])*1000,2))+'\n'
+cmp2=r'offset = '+str(np.round(popt1[1],2))+' $\pm$'+str(np.round(np.sqrt(pcov1[1,1]),2))+'\n'
+cmp3='Pearsons correlation: %.3f' % corr
+plt.text(35,69,cmp1+cmp2+cmp3,fontsize=12,fontdict=font,bbox=dict(boxstyle='square',ec=(0.,0.,0.),fc=(1.,1.,1.),alpha=0.8))
+plt.hlines(50, 35, 70,colors='gray',linestyle='--')
+plt.vlines(50, 20, 80,colors='gray',linestyle='--')
+# plt.scatter(playerbase2[:,0],100*playerbase2[:,1]/playerbase2[:,2],c=playerbase2[:,2],cmap='hsv',alpha=0.2,s=15)
 # plt.scatter(playernumbers,skill2,color='tab:red')
 ax = plt.gca()
 ax.set_xlabel('player skill level / a.u.', fontdict=font)
 ax.set_ylabel('Player winrate in percent', fontdict=font)
 plt.tight_layout()
 # plt.show()
-plt.show()
-plt.close()
-
-
-
-fig = plt.figure(figsize=(4,6),dpi=200)
-
-levels = np.arange(0,n_games/10,100)
-n, bins, patches = plt.hist(playerbase2[:,2],levels, density=False,facecolor='black',alpha=0.75)
-# plt.xlim(0, n_games)
-# plt.tick_params(axis='x', which='both', labelbottom=False, bottom=True, labelsize=8)
-plt.title('Player skill distribution', fontdict=font)
-ax1.set_ylabel('number of players', fontdict=font)
-# plt.tight_layout()
+fig.savefig('Skill_WR_correlation_'+str(n_games)+'_'+str(n_players)+'_'+str(sigma)+str(RNG)+'.png',dpi=100, format='png',bbox_inches='tight', pad_inches=0.1) 
 plt.show()
 plt.close()
 
 
 
 
-# fig = plt.figure(figsize=(6,4),dpi=200)
-# plt.scatter(playerbase3[:,0],100*playerbase3[:,1]/500000,color='navy')
-# # plt.scatter(playernumbers,skill2,color='tab:red')
-# ax = plt.gca()
-# ax.set_xlabel('player skill level / a.u.', fontdict=font)
-# ax.set_ylabel('Player winrate in percent', fontdict=font)
-# plt.tight_layout()
-# # plt.show()
-# plt.show()
-
-# fig = plt.figure(figsize=(6,4),dpi=200)
-# plt.scatter(playerbase4[:,0],100*playerbase4[:,1]/500000,color='navy')
-# # plt.scatter(playernumbers,skill2,color='tab:red')
-# ax = plt.gca()
-# ax.set_xlabel('player skill level / a.u.', fontdict=font)
-# ax.set_ylabel('Player winrate in percent', fontdict=font)
-# plt.tight_layout()
-# # plt.show()
-# plt.show()
 
